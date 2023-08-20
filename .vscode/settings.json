@@ -1,0 +1,16 @@
+{
+  "files.exclude": {
+    ".husky/_/": true,
+    "**/.eslintcache": true,
+    "**/.yarn": true,
+    "**/*.lock": true,
+    "**/*.turbo/": true,
+    "**/dist/": true,
+    "**/LICENSE": true,
+    "**/node_modules/": true
+  },
+
+  "protoc": { "options": ["--proto_path=packages/protos/schema"] },
+
+  "typescript.tsdk": "node_modules/typescript/lib"
+}

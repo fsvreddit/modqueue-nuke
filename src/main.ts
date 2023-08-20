@@ -1,12 +1,4 @@
-import {
-    Comment,
-    Context,
-    Devvit,
-    FormOnSubmitEvent,
-    MenuItemOnPressEvent,
-    Post,
-    Subreddit,
-} from '@devvit/public-api-next';
+import {Comment, Context, Devvit, FormOnSubmitEvent, MenuItemOnPressEvent, Post, Subreddit,} from "@devvit/public-api";
 
 Devvit.configure({
     redditAPI: true,
@@ -116,7 +108,7 @@ const controlPanel = Devvit.createForm(
                         type: "boolean",
                         name: "ignoreModerator",
                         label: "Ignore moderator items",
-                        helpText: "If enabled, items that have been posted by a moderator will be ignored."
+                        helpText: "If enabled, items that have been posted by a moderator or distinguished will be ignored."
                     },
                 ]
             }
@@ -128,12 +120,13 @@ const controlPanel = Devvit.createForm(
 
 async function nukeItems(_event: FormOnSubmitEvent, context: Context) {
     const {
-        reddit,
         kvStore,
+        reddit,
+        subredditId,
         userId,
         ui
     } = context
-    const itemIds: Array<string> | undefined = await kvStore.get(`${userId}_itemsToRemove`)
+    const itemIds: Array<string> | undefined = await kvStore.get(`${userId}_${subredditId}_itemsToRemove`)
     const itemsToRemove: ModqueueItem[] = []
     if (itemIds === undefined) {
         log(context, "No items to remove")
@@ -197,9 +190,9 @@ const nukeForm = Devvit.createForm(
 
 Devvit.addMenuItem(
     {
-        description: 'Nuke (remove) items in the modqueue',
+        description: "Nuke (remove) items in the modqueue",
         forUserType: "moderator",
-        label: 'Nuke Modqueue',
+        label: "Nuke Modqueue",
         location: ["subreddit"],
         onPress: (_event: MenuItemOnPressEvent, context) => {
             context.ui.showForm(controlPanel)
@@ -214,7 +207,7 @@ interface GenerateItemCountsParams {
 }
 
 function generateItemCounts(...items: GenerateItemCountsParams[]) {
-    let itemsCounts = '';
+    let itemsCounts = "";
     let elements: string[] = []
     items.forEach((item) => {
         if (item.count != undefined) {
@@ -228,7 +221,7 @@ function generateItemCounts(...items: GenerateItemCountsParams[]) {
         }
     })
     if (elements.length > 0) {
-        itemsCounts = `(${elements.join(', ')})`
+        itemsCounts = `(${elements.join(", ")})`
     }
     return itemsCounts;
 }
@@ -236,19 +229,19 @@ function generateItemCounts(...items: GenerateItemCountsParams[]) {
 type ModqueueItem = Comment | Post;
 
 interface CheckParams {
-    target: ModqueueItem;
+    checkFunc: (target: ModqueueItem) => Promise<boolean>;
     failureMessage: (target: ModqueueItem) => string;
-    checkFunc: (target: ModqueueItem) => boolean;
+    target: ModqueueItem;
 }
 
-function check({
-                   target,
-                   checkFunc,
-                   failureMessage
-               }: CheckParams): boolean {
-    const itemType = target.constructor.name.toLowerCase()
-    const baseString = `Skipping ${itemType} id: ${target.id.split('_')[1]} by u/${target.authorName} because`;
-    const shouldRemove = checkFunc(target);
+async function check({
+                         checkFunc,
+                         failureMessage,
+                         target
+                     }: CheckParams): Promise<boolean> {
+    const itemType = target.constructor.name.replace("_", "").toLowerCase()
+    const baseString = `Skipping ${itemType} id: ${target.id.split("_")[1]} by u/${target.authorName} because`;
+    const shouldRemove = await checkFunc(target);
     if (!shouldRemove) {
         console.log(`${baseString} ${failureMessage(target)}`)
     }
@@ -281,67 +274,70 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
         })
         return;
     }
-    log(context, `Scanning modqueue...`)
+    log(context, "Scanning modqueue...")
     let itemsToRemove: ModqueueItem[] = [];
     let commentCount = 0;
     let postCount = 0;
     try {
         await subreddit.getModQueue({type: itemType[0]}).all().then(async (items: (ModqueueItem)[]) => {
             for (const item of items) {
-                if (checkScore && !check({
-                    target: item,
-                    checkFunc: (target) => target.score <= maxScore,
+                if (checkScore && !(await check({
+                    checkFunc: async (target) => target.score <= maxScore,
                     failureMessage: (target) => `the score is too high ${generateItemCounts({
                         name: "Score",
                         count: target.score
-                    })}`
-                })) continue;
-                if (checkAge && !check({
-                    target: item,
-                    checkFunc: (target) => target.createdAt.getMilliseconds() <= (Date.now() - (minAge * 60 * 60 * 1000)),
-                    failureMessage: (target) => `the ${itemType} isn't old enough ${generateItemCounts({
+                    })}`,
+                    target: item
+                }))) continue;
+                if (checkAge && !(await check({
+                    checkFunc: async (target) => target.createdAt.getMilliseconds() <= (Date.now() - (minAge * 60 * 60 * 1000)),
+                    failureMessage: (target) => `the ${itemType} isn"t old enough ${generateItemCounts({
                         name: "Age",
                         value: formatAge(target)
-                    })}`
-                })) continue;
+                    })}`,
+                    target: item
+                }))) continue;
                 if (checkReports) {
                     let reportCount = item instanceof Comment ? item.numReports : item.numberOfReports;
-                    if (!check({
-                        target: item,
-                        checkFunc: (_target) => reportCount >= minReports,
-                        failureMessage: (_target) => `reports are too low ${generateItemCounts({
+                    if (!(await check({
+                        checkFunc: async (_target) => reportCount >= minReports,
+                        failureMessage: (_target) => `report count is too low ${generateItemCounts({
                             name: "Reports",
                             count: reportCount
-                        })}`
-                    })) continue;
+                        })}`,
+                        target: item
+                    }))) continue;
                 }
-                if (ignoreSticky && !check({
-                    target: item,
-                    checkFunc: (target) => target.isStickied(),
-                    failureMessage: (_target) => `it is stickied`
-                })) continue;
-                if (ignorePreviouslyApproved && !check({
-                    target: item,
-                    checkFunc: (target) => target.isStickied(),
-                    failureMessage: (_target) => `it was previously approved`
-                })) continue;
-                if (ignoreModerator && !check({
-                    target: item,
-                    checkFunc: (target) => subreddit.getModerators({username: target.authorName}).pageSize !== undefined,
-                    failureMessage: (_target) => `the author is a moderator`
-                })) continue;
+                if (ignoreSticky && !(await check({
+                    checkFunc: async (target) => !target.isStickied(),
+                    failureMessage: (_target) => "it is stickied",
+                    target: item
+                }))) continue;
+                if (ignorePreviouslyApproved && !(await check({
+                    checkFunc: async (target) => !target.isApproved(),
+                    failureMessage: (_target) => "it was previously approved",
+                    target: item
+                }))) continue;
+                if (ignoreModerator && !(await check({
+                    checkFunc: async (target) => {
+                        return !((await subreddit.getModerators({username: target.authorName}).all()).length > 0 || target.distinguishedBy !== undefined)
+                    },
+                    failureMessage: (_target) => "is a moderator or is distinguished",
+                    target: item
+                }))) continue;
                 item instanceof Post ? postCount++ : commentCount++;
                 itemsToRemove.push(item)
             }
         })
         if (itemsToRemove.length == 0) {
-            log(context, `No items to nuke`)
+            log(context, "No items to nuke")
             return;
         }
-        await kvStore.put(`${context.userId}_itemsToRemove`, itemsToRemove.map((item) => item.id))
+        await kvStore.put(`${context.userId}_${context.subredditId}_itemsToRemove`, itemsToRemove.map((item) => item.id))
         let description = `Found ${itemsToRemove.length}`
         if (itemsToRemove.length == 1) {
-            description += ` ${itemsToRemove[0].constructor.name.toLowerCase()} to nuke`
+            description += ` ${itemsToRemove[0].constructor.name.replace("_", "").toLowerCase()} to nuke`
+            console.log(description)
         } else {
             description += ` items to nuke ${generateItemCounts({
                     name: "Posts",
@@ -352,15 +348,14 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
                     count: commentCount
                 })}`
         }
-        description += `. Are you sure you want to nuke these items?`
+        description += ". Are you sure you want to nuke these items?"
         context.ui.showForm(nukeForm, {
                 description: description
             }
         )
-
     } catch (e) {
         context.ui.showToast({
-            text: 'An error occurred scanning the modqueue items',
+            text: "An error occurred scanning the modqueue items",
             appearance: "neutral"
         })
         console.error(`${e}`, e)
@@ -380,29 +375,29 @@ function formatAge({createdAt}: ModqueueItem): string {
     const hours = Math.floor(ageInSeconds / 3600) % 24;
     const days = Math.floor(ageInSeconds / 86400);
 
-    let ageString = '';
+    let ageString = "";
     if (days > 0) {
-        ageString += `${days} day${days === 1 ? '' : 's'} `;
+        ageString += `${days} day${days === 1 ? "" : "s"} `;
     }
     if (hours > 0 && days < 2) {
-        if (ageString != '') {
-            ageString += ', ';
+        if (ageString != "") {
+            ageString += ", ";
         }
-        ageString += `${hours} hour${hours === 1 ? '' : 's'} `;
+        ageString += `${hours} hour${hours === 1 ? "" : "s"} `;
     }
     if (minutes > 0 && days === 0 && hours === 0) {
-        if (ageString != '') {
-            ageString += ', ';
+        if (ageString != "") {
+            ageString += ", ";
         }
-        ageString += `${minutes} minute${minutes === 1 ? '' : 's'} `;
+        ageString += `${minutes} minute${minutes === 1 ? "" : "s"} `;
     }
     if (seconds > 0 && days === 0 && hours === 0 && minutes === 0) {
-        if (ageString != '') {
-            ageString += ', ';
+        if (ageString != "") {
+            ageString += ", ";
         }
-        ageString += `${seconds} second${seconds === 1 ? '' : 's'} `;
+        ageString += `${seconds} second${seconds === 1 ? "" : "s"} `;
     }
-    ageString += 'ago';
+    ageString += "ago";
     return ageString.trim();
 }
 

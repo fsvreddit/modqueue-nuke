@@ -5,9 +5,7 @@
   "license": "BSD-3-Clause",
   "type": "module",
   "dependencies": {
-    "@devvit/cli": "0.10.3",
-    "@devvit/protos": "0.10.3",
-    "devvit": "^0.10.3"
+    "devvit": "^0.10.22"
   },
   "devDependencies": {
     "@devvit/tsconfig": "0.10.3",
@@ -16,9 +14,10 @@
   "scripts": {
     "upload-major": "devvit upload --bump major",
     "upload-minor": "devvit upload --bump minor",
-    "upload-micro": "devvit upload --bump micro",
+    "upload-patch": "devvit upload --bump patch",
     "upload-pre": "devvit upload --bump prerelease",
-    "update-devvit": "npm i -g devvit @devvit/cli",
+    "update-devvit": "npm i devvit @devvit/cli",
     "playtest": "devvit playtest Lil_SpazJoekp"
   }
 }
+

@@ -24,8 +24,7 @@ will only remove items that match **ALL** selected criteria. You can filter by:
       new lines between them.
     - Each keyword or phrase you want to match must be on separate lines.
 - **Report Reason Keyword/Phrase Filter**: Keywords to search for in the item's report reasons. Items that contain any
-  of
-  these keywords will be removed. Keywords are case-insensitive.
+  of these keywords will be removed. Keywords are case-insensitive.
     - **Ignore User Reports?**: If enabled, only check reports made by subreddit moderators.
     - **Use Regex?**: If enabled, interpret the text in "Report Keywords and/or Phrases" as Regular Expression. For
       example, `no\s+(yo)?u` would match any item with "no" followed by either "you" or "u" with one or more spaces or
@@ -50,7 +49,7 @@ will only remove items that match **ALL** selected criteria. You can filter by:
       comment has been filtered by AutoModerator. Posts that have been filtered are not affected by this limitation. A
       fix for this should be in the works by Reddit.
 - Sometimes Modqueue Nuke will not catch all items in the modqueue. This is likely due to Reddit's API limitations and
-  is out of the control of Modqueue Nuke. If this happens, try running re-invoking the nuke again or contact my author,
+  is out of the control of Modqueue Nuke. If this happens, try running the nuke again or contact my author,
   u/Lil_SpazJoekp, if you need additional assistance.
 
 ## Feedback
@@ -59,13 +58,21 @@ If you have any feedback or suggestions for Modqueue Nuke, please contact my aut
 
 ## Changes
 
+### 1.1.2
+
+- No changes, just updating the README.
+
+### 1.1.1
+
+- No changes, just updating the README.
+
 ### 1.1.0
 
-- Set the default for Item Type to 'All'
+- Set the default for "Item Type" to 'All'
 - Added a check to verify if the invoker has `post` or `all` permissions before nuking.
 - Added "Re-Approve Previously Approved Items" toggle to re-approve items that have been previously approved.
 - Added "Ignore Reports" toggle to set "ignore reports" on previously approved items.
-- Added the ability to filter items by keywords, phrases, and regular expressions in the items' title, body, report
+- Added the ability to filter items by keywords, phrases, and regular expressions in the items' title, body, and report
   reason.
 
 ### 1.0.0

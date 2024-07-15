@@ -495,6 +495,7 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
     let ignoreReportsCommentCount = 0;
     let ignoreReportsPostCount = 0;
     let modqueueCount = 0;
+    const moderators: string[] = (await subreddit.getModerators().all()).map((moderator) => moderator.username);
     try {
         await subreddit.getModQueue({type: itemType[0]}).all().then(async (items: (ModqueueItem)[]) => {
             for (const item of items) {
@@ -591,21 +592,15 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
                 )) continue;
                 if (ignoreModerator && !(
                     await check({
-                        checkFunc: async (target) => {
-                            return !(
-                                (
-                                    await subreddit.getModerators({username: target.authorName}).all()
-                                ).length > 0 || target.distinguishedBy !== undefined
-                            )
-                        },
+                        checkFunc: async (target) => !(
+                            moderators.includes(target.authorName) || target.distinguishedBy !== undefined
+                        ),
                         failureMessage: (_target) => "the author is is a moderator or it is distinguished",
                         target: item,
                     })
-                )) continue;
-                if (ignoreVisible && !(
+                ) || ignoreVisible && !(
                     await check({
                         checkFunc: async (target) => {
-                            // if item.spam is true, it was removed by Reddit's spam filter
                             return target.spam
                                 || target.removed
                                 // @ts-ignore

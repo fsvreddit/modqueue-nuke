@@ -58,6 +58,10 @@ If you have any feedback or suggestions for Modqueue Nuke, please contact my aut
 
 ## Changes
 
+### 1.1.5
+
+- Fixed an issue with nuking large modqueues taking too long to complete.
+
 ### 1.1.2
 
 - No changes, just updating the README.

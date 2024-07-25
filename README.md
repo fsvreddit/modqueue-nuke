@@ -38,7 +38,7 @@ will only remove items that match **ALL** selected criteria. You can filter by:
   removed.
 - **Re-Approve Previously Approved Items**: If enabled, items that have been previously approved by a moderator will be
   re-approved instead.
-- **Ignore Reports**: If enabled, items that have been previously approved by a moderator will be set to ignore reports.
+- **Ignore Reports**: The maximum number of items to scan in the modqueue. Default is 0. Set to 0 to scan all items.
 
 ## Known Issues
 
@@ -57,6 +57,10 @@ will only remove items that match **ALL** selected criteria. You can filter by:
 If you have any feedback or suggestions for Modqueue Nuke, please contact my author, u/Lil_SpazJoekp, on Reddit.
 
 ## Changes
+
+### 1.2.0
+
+- Added the ability to limit the number of items when scanning the modqueue.
 
 ### 1.1.5
 

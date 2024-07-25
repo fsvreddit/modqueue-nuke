@@ -12,10 +12,67 @@ import {
     User,
 } from "@devvit/public-api";
 
+type ModqueueItem = Comment | Post;
+
+interface ActionItem {
+    items: ModqueueItem[];
+    action: (item: (Post | Comment)) => Promise<void>;
+    actionName: string;
+}
+
+interface ActionResult {
+    commentCount: number;
+    failedCount: number;
+    postCount: number;
+}
+
+interface CheckParams {
+    checkFunc: (target: ModqueueItem) => Promise<boolean>;
+    failureMessage: (target: ModqueueItem) => string;
+    target: ModqueueItem;
+}
+
+interface GenerateItemCountsParams {
+    name: string;
+    count?: number;
+    value?: string;
+}
+
+interface LogAction {
+    actionName: string;
+    commentCount: number;
+    postCount: number;
+}
+
+
+const nukeForm = Devvit.createForm(
+    (data) => (
+        {
+            fields: [],
+            title: "Confirm Nuke",
+            acceptLabel: "Nuke!",
+            description: data.description,
+        }
+    ),
+    nukeItems,
+);
+
 Devvit.configure({
     redditAPI: true,
     redis: true,
 });
+
+Devvit.addMenuItem(
+    {
+        description: "Nuke items in the modqueue",
+        forUserType: "moderator",
+        label: "Nuke Modqueue",
+        location: ["subreddit"],
+        onPress: (_event: MenuItemOnPressEvent, context) => {
+            context.ui.showForm(controlPanel)
+        },
+    },
+);
 
 const controlPanel = Devvit.createForm(
     {
@@ -188,35 +245,19 @@ const controlPanel = Devvit.createForm(
                 label: "Ignore Reports",
                 helpText: "Implies 'Ignore Previously Approved Items'. If enabled, set 'Ignore Reports' on previously approved items.",
             },
+            {
+                type: "number",
+                name: "scanLimit",
+                label: "Modqueue Scan Limit",
+                helpText: "The maximum number of items to scan in the modqueue. Default is 0. Set to 0 to scan all items.",
+            },
         ],
         title: "Nuke Control Panel",
     },
     scanModqueue,
 )
 
-async function resolveItems(itemIds: string[], reddit: RedditAPIClient): Promise<ModqueueItem[]> {
-    const items: ModqueueItem[] = []
-    if (itemIds.length !== 0) {
-        for (const id of itemIds) {
-            if (id.startsWith("t1_")) {
-                items.push(await reddit.getCommentById(id));
-            } else {
-                items.push(await reddit.getPostById(id));
-            }
-        }
-    }
-    return items;
-}
-
-interface ActionItem {
-    items: ModqueueItem[];
-    action: (item: (Post | Comment)) => Promise<void>;
-    actionName: string;
-}
-
-
-async function actionItems(context: ContextAPIClients & BaseContext, actionItem: ActionItem,
-): Promise<{postCount: number, commentCount: number, failedCount: number}>{
+async function actionItems(context: ContextAPIClients & BaseContext, actionItem: ActionItem): Promise<ActionResult> {
     const {items, action, actionName} = actionItem;
     let postCount = 0;
     let commentCount = 0;
@@ -242,34 +283,18 @@ async function actionItems(context: ContextAPIClients & BaseContext, actionItem:
     return {postCount, commentCount, failedCount};
 }
 
-interface LogAction {
-    actionName: string;
-    commentCount: number;
-    postCount: number;
-}
-
-function logActionSuccess(context: ContextAPIClients & BaseContext, ...actions: LogAction[]
-): void {
-    for (const {postCount, commentCount, actionName} of actions) {
-        const totalCount: number = postCount + commentCount;
-        if (totalCount != 0) {
-            const itemsText = totalCount === 1 ? "item" : "items";
-            log(
-                context,
-                `Successfully ${actionName} ${totalCount} ${itemsText} ${generateItemCounts({
-                    name: "Post" + (
-                        postCount === 1 ? "" : "s"
-                    ),
-                    count: postCount,
-                }, {
-                    name: "Comment" + (
-                        commentCount === 1 ? "" : "s"
-                    ),
-                    count: commentCount,
-                })}`,
-            );
-        }
+async function check({
+    checkFunc,
+    failureMessage,
+    target,
+}: CheckParams): Promise<boolean> {
+    const itemType = target.constructor.name.replace("_", "").toLowerCase()
+    const baseString = `Skipping ${itemType} id: ${target.id.split("_")[1]} by u/${target.authorName} because`;
+    const shouldRemove = await checkFunc(target);
+    if (!shouldRemove) {
+        console.log(`${baseString} ${failureMessage(target)}`)
     }
+    return shouldRemove
 }
 
 async function nukeItems(_event: FormOnSubmitEvent, context: Context) {
@@ -328,7 +353,11 @@ async function nukeItems(_event: FormOnSubmitEvent, context: Context) {
         context,
         {postCount: removedPostCount, commentCount: removedCommentCount, actionName: "removed"},
         {postCount: approvedPostCount, commentCount: approvedCommentCount, actionName: "re-approved"},
-        {postCount: ignoredReportsPostCount, commentCount: ignoredReportsCommentCount, actionName: "ignored reports on"},
+        {
+            postCount: ignoredReportsPostCount,
+            commentCount: ignoredReportsCommentCount,
+            actionName: "ignored reports on",
+        },
     );
     let errorMessage = "Failed to ";
     let messages: string[] = []
@@ -354,104 +383,35 @@ async function nukeItems(_event: FormOnSubmitEvent, context: Context) {
     }
 }
 
-
-const nukeForm = Devvit.createForm(
-    (data) => (
-        {
-            fields: [],
-            title: "Confirm Nuke",
-            acceptLabel: "Nuke!",
-            description: data.description,
-        }
-    ),
-    nukeItems,
-);
-
-Devvit.addMenuItem(
-    {
-        description: "Nuke items in the modqueue",
-        forUserType: "moderator",
-        label: "Nuke Modqueue",
-        location: ["subreddit"],
-        onPress: (_event: MenuItemOnPressEvent, context) => {
-            context.ui.showForm(controlPanel)
-        },
-    },
-);
-
-interface GenerateItemCountsParams {
-    name: string;
-    count?: number;
-    value?: string;
-}
-
-function generateItemCounts(...items: GenerateItemCountsParams[]): string {
-    let itemsCounts = "";
-    let elements: string[] = []
-    items.forEach((item) => {
-        if (item.count != undefined) {
-            if (item.count > 0) {
-                elements.push(`${item.name}: ${item.count}`)
-            }
-        } else if (item.value != undefined) {
-            if (item.value != "") {
-                elements.push(`${item.name}: ${item.value}`)
+async function resolveItems(itemIds: string[], reddit: RedditAPIClient): Promise<ModqueueItem[]> {
+    const items: ModqueueItem[] = []
+    if (itemIds.length !== 0) {
+        for (const id of itemIds) {
+            if (id.startsWith("t1_")) {
+                items.push(await reddit.getCommentById(id));
+            } else {
+                items.push(await reddit.getPostById(id));
             }
         }
-    })
-    if (elements.length > 0) {
-        itemsCounts = `(${elements.join(", ")})`
     }
-    return itemsCounts;
-}
-
-type ModqueueItem = Comment | Post;
-
-interface CheckParams {
-    checkFunc: (target: ModqueueItem) => Promise<boolean>;
-    failureMessage: (target: ModqueueItem) => string;
-    target: ModqueueItem;
-}
-
-async function check({
-    checkFunc,
-    failureMessage,
-    target,
-}: CheckParams): Promise<boolean> {
-    const itemType = target.constructor.name.replace("_", "").toLowerCase()
-    const baseString = `Skipping ${itemType} id: ${target.id.split("_")[1]} by u/${target.authorName} because`;
-    const shouldRemove = await checkFunc(target);
-    if (!shouldRemove) {
-        console.log(`${baseString} ${failureMessage(target)}`)
-    }
-    return shouldRemove
-}
-
-function evaluateKeywordMatch(useRegex: boolean, keywords: string, body: string) {
-    if (useRegex) {
-        let regex: RegExp = new RegExp(keywords, "i");
-        return regex.test(body);
-    } else {
-        let keywordsArray: string[] = keywords.split("\n");
-        return keywordsArray.some((keyword: string) => body.toLowerCase().includes(keyword.toLowerCase()))
-    }
+    return items;
 }
 
 async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
     const {
         reddit,
         redis,
-        userId
+        userId,
+        ui
     } = context;
     const subreddit: Subreddit = await reddit.getCurrentSubreddit()
     // Check invoker has the necessary mod permissions
     const moderator: User = await reddit.getUserById(userId ? userId : "")
     const permissions = await moderator.getModPermissionsForSubreddit(subreddit.name)
-    console.log(permissions)
     if (!(
         permissions.includes("all") || permissions.includes("posts")
     )) {
-        context.ui.showToast({
+        ui.showToast({
             text: "You do not have the necessary permissions to nuke the modqueue! You must have at least 'posts' permissions.",
             appearance: "neutral",
         })
@@ -476,15 +436,15 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
         ignorePreviouslyApproved,
         reapprovePreviouslyApproved,
         ignoreReportsPreviouslyApproved,
+        scanLimit
     } = event.values;
     if (itemType == undefined) {
-        context.ui.showToast({
+        ui.showToast({
             text: "You must select a type of item to nuke",
             appearance: "neutral",
         })
         return;
     }
-    log(context, "Scanning modqueue...")
     let itemsToRemove: ModqueueItem[] = [];
     let itemsToApprove: ModqueueItem[] = [];
     let itemsToIgnoreReports: ModqueueItem[] = [];
@@ -497,7 +457,9 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
     let modqueueCount = 0;
     const moderators: string[] = (await subreddit.getModerators().all()).map((moderator) => moderator.username);
     try {
-        await subreddit.getModQueue({type: itemType[0]}).all().then(async (items: (ModqueueItem)[]) => {
+        let modQueue = subreddit.getModQueue({type: itemType[0]});
+        let items: Promise<ModqueueItem[]> = scanLimit > 0 ? modQueue.get(scanLimit) : modQueue.all();
+        await items.then(async (items: ModqueueItem[]) => {
             for (const item of items) {
                 modqueueCount++;
                 if (checkScore && !(
@@ -680,19 +642,18 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
                 },
             )}`)
         }
-        // join with commas. if there are more than 2 elements, add an ", and" before the last element if there are 2 elements, add an " and " between them
         let lastItem = toNuke.pop();
         description += toNuke.length ? toNuke.join(", ") + (
             toNuke.length > 1 ? ", and " : " and "
         ) : "";
         description += lastItem;
         description += ". Are you sure you want to nuke these items?"
-        context.ui.showForm(nukeForm, {
+        ui.showForm(nukeForm, {
                 description: description,
             },
         )
     } catch (e) {
-        context.ui.showToast({
+        ui.showToast({
             text: "An error occurred scanning the modqueue",
             appearance: "neutral",
         })
@@ -700,14 +661,21 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
     }
 }
 
-function log(context: Context, message: string): void {
-    console.log(message)
-    context.ui.showToast(message)
+function evaluateKeywordMatch(useRegex: boolean, keywords: string, body: string) {
+    if (useRegex) {
+        let regex: RegExp = new RegExp(keywords, "i");
+        return regex.test(body);
+    } else {
+        let keywordsArray: string[] = keywords.split("\n");
+        return keywordsArray.some((keyword: string) => body.toLowerCase().includes(keyword.toLowerCase()))
+    }
 }
 
 function formatAge({createdAt}: ModqueueItem): string {
-    // @ts-ignore
-    const ageInSeconds = (new Date() - createdAt) / 1000
+    const ageInSeconds = (
+        // @ts-ignore
+        new Date() - createdAt
+    ) / 1000
     const seconds = ageInSeconds % 60;
     const minutes = Math.floor(ageInSeconds / 60) % 60;
     const hours = Math.floor(ageInSeconds / 3600) % 24;
@@ -737,6 +705,54 @@ function formatAge({createdAt}: ModqueueItem): string {
     }
     ageString += "ago";
     return ageString.trim();
+}
+
+function generateItemCounts(...items: GenerateItemCountsParams[]): string {
+    let itemsCounts = "";
+    let elements: string[] = []
+    items.forEach((item) => {
+        if (item.count != undefined) {
+            if (item.count > 0) {
+                elements.push(`${item.name}: ${item.count}`)
+            }
+        } else if (item.value != undefined) {
+            if (item.value != "") {
+                elements.push(`${item.name}: ${item.value}`)
+            }
+        }
+    })
+    if (elements.length > 0) {
+        itemsCounts = `(${elements.join(", ")})`
+    }
+    return itemsCounts;
+}
+
+function log(context: Context, message: string): void {
+    console.log(message)
+    context.ui.showToast(message)
+}
+
+function logActionSuccess(context: ContextAPIClients & BaseContext, ...actions: LogAction[]): void {
+    for (const {postCount, commentCount, actionName} of actions) {
+        const totalCount: number = postCount + commentCount;
+        if (totalCount != 0) {
+            const itemsText = totalCount === 1 ? "item" : "items";
+            log(
+                context,
+                `Successfully ${actionName} ${totalCount} ${itemsText} ${generateItemCounts({
+                    name: "Post" + (
+                        postCount === 1 ? "" : "s"
+                    ),
+                    count: postCount,
+                }, {
+                    name: "Comment" + (
+                        commentCount === 1 ? "" : "s"
+                    ),
+                    count: commentCount,
+                })}`,
+            );
+        }
+    }
 }
 
 // noinspection JSUnusedGlobalSymbols

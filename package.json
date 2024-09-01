@@ -5,7 +5,8 @@
   "license": "BSD-3-Clause",
   "type": "module",
   "dependencies": {
-    "devvit": "^0.10.22"
+    "@devvit/public-api": "^0.10.25",
+    "devvit": "^0.10.25"
   },
   "devDependencies": {
     "@devvit/tsconfig": "0.10.3",
@@ -20,4 +21,3 @@
     "playtest": "devvit playtest Lil_SpazJoekp"
   }
 }
-

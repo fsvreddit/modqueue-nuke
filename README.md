@@ -58,6 +58,13 @@ If you have any feedback or suggestions for Modqueue Nuke, please contact my aut
 
 ## Changes
 
+### 1.3.0
+
+- Optimized nuking process to be faster and more efficient.
+- Fixed an issue with the "Ignore Reports" toggle not working correctly.
+- Fixed an issue with approving previously approved would also ignore reports even if the "Ignore Reports" toggle was
+  off.
+
 ### 1.2.0
 
 - Added the ability to limit the number of items when scanning the modqueue.

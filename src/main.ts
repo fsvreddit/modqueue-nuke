@@ -4,7 +4,9 @@ import {
     Context,
     ContextAPIClients,
     Devvit,
+    Form,
     FormOnSubmitEvent,
+    JSONObject,
     MenuItemOnPressEvent,
     Post,
     RedditAPIClient,
@@ -16,9 +18,9 @@ import {
 type ModqueueItem = Comment | Post;
 
 interface ActionItem {
-    items: ModqueueItem[];
     action: (item: (Post | Comment)) => Promise<void>;
     actionName: string;
+    items: ModqueueItem[];
 }
 
 interface ActionResult {
@@ -34,8 +36,8 @@ interface CheckParams {
 }
 
 interface GenerateItemCountsParams {
-    name: string;
     count?: number;
+    name: string;
     value?: string;
 }
 
@@ -54,22 +56,22 @@ Devvit.configure({
 Devvit.addSettings([
     {
         defaultValue: 3,
-        label: 'Retry Limit',
-        name: 'retryLimit',
+        label: "Retry Limit",
+        name: "retryLimit",
         scope: SettingScope.App,
-        type: 'number',
+        type: "number",
     },
-])
+]);
 
 const nukeForm = Devvit.createForm(
-    (data) => (
+    (data: JSONObject) => (
         {
             fields: [],
             title: "Confirm Nuke",
             acceptLabel: "Nuke!",
             description: data.description,
         }
-    ),
+    ) as Form,
     nukeItems,
 );
 
@@ -276,7 +278,7 @@ async function actionItems(context: ContextAPIClients & BaseContext, actionItem:
     let failedCount = 0;
     await Promise.all(items.map(async (item) => {
         const retryLimit: number = await context.settings.get("retryLimit") || 3;
-        let retryCount = 0
+        let retryCount = 0;
         while (retryCount < retryLimit) {
             try {
                 await action(item);
@@ -318,11 +320,10 @@ async function check({
     return shouldRemove;
 }
 
-async function nukeItems(_event: FormOnSubmitEvent, context: Context) {
+async function nukeItems(_event: FormOnSubmitEvent<JSONObject>, context: Context) {
     const {
         redis,
         reddit,
-        settings,
         userId,
         ui,
     } = context;
@@ -437,7 +438,7 @@ async function resolveItems(itemIds: string[], reddit: RedditAPIClient): Promise
     return items;
 }
 
-async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
+async function scanModqueue(event: FormOnSubmitEvent<JSONObject>, context: Context) {
     const {
         reddit,
         redis,
@@ -498,14 +499,16 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
         await subreddit.getModerators().all()
     ).map((moderator) => moderator.username);
     try {
-        const listings = []
+        const listings = [];
         let commentModqueue = subreddit.getModQueue({type: "comment"});
         let commentItems: Promise<ModqueueItem[]> = commentModqueue.all();
         let postModqueue = subreddit.getModQueue({type: "post"});
         let postItems: Promise<ModqueueItem[]> = postModqueue.all();
-        switch (itemType[0]) {
+        switch ((
+            itemType as string[]
+        )[0]) {
             case "all":
-                listings.push(commentItems)
+                listings.push(commentItems);
                 listings.push(postItems);
                 break;
             case "comment":
@@ -547,7 +550,9 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
 
                 const checkResults = await Promise.all([
                     checkScore ? check({
-                        checkFunc: async (target) => target.score <= maxScore,
+                        checkFunc: async (target) => target.score <= (
+                            maxScore as number
+                        ),
                         failureMessage: (target) => `the score is too high ${generateItemCounts({
                             name: "Score",
                             count: target.score,
@@ -557,7 +562,9 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
                     checkAge ? check({
                         checkFunc: async (target) => target.createdAt.getMilliseconds() <= (
                             Date.now() - (
-                                minAge * 60 * 60 * 1000
+                                (
+                                    minAge as number
+                                ) * 60 * 60 * 1000
                             )
                         ),
                         failureMessage: (target) => `the ${itemType} isn't old enough ${generateItemCounts({
@@ -569,7 +576,9 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
                     checkReports ? check({
                         checkFunc: async (_target) => {
                             let reportCount = item instanceof Comment ? item.numReports : item.numberOfReports;
-                            return reportCount >= minReports;
+                            return reportCount >= (
+                                minReports as number
+                            );
                         },
                         failureMessage: (_target) => `report count is too low ${generateItemCounts({
                             name: "Reports",
@@ -588,7 +597,7 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
                             if (target instanceof Post) {
                                 body = target.title + "\n" + body;
                             }
-                            return evaluateKeywordMatch(useRegex, keywords, body);
+                            return evaluateKeywordMatch(useRegex as boolean, keywords as string, body);
                         },
                         failureMessage: (_target) => "the title/body doesn't contain the specified keywords",
                         target: item,
@@ -602,7 +611,11 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
                             if (target.modReportReasons != undefined) {
                                 reports.push(...target.modReportReasons);
                             }
-                            return evaluateKeywordMatch(reportUseRegex, reportKeywords, reports.join("\n"));
+                            return evaluateKeywordMatch(
+                                reportUseRegex as boolean,
+                                reportKeywords as string,
+                                reports.join("\n"),
+                            );
                         },
                         failureMessage: (_target) => "its reports doesn't contain the specified keywords",
                         target: item,
@@ -641,10 +654,10 @@ async function scanModqueue(event: FormOnSubmitEvent, context: Context) {
                 }
 
                 item instanceof Post ? removePostCount++ : removeCommentCount++;
-                itemsToRemove.push(item)
+                itemsToRemove.push(item);
             }
-        })
-        log(context, `Checked ${modqueueCount} items in the modqueue`)
+        });
+        log(context, `Checked ${modqueueCount} items in the modqueue`);
         if (itemsToRemove.length + itemsToApprove.length + itemsToIgnoreReports.length == 0) {
             log(context, "No items found to nuke");
             return;

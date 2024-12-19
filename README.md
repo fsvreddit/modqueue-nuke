@@ -38,7 +38,8 @@ will only remove items that match **ALL** selected criteria. You can filter by:
   removed.
 - **Re-Approve Previously Approved Items**: If enabled, items that have been previously approved by a moderator will be
   re-approved instead.
-- **Ignore Reports**: The maximum number of items to scan in the modqueue. Default is 0. Set to 0 to scan all items.
+- **Modqueue Scan Limit**: The maximum number of items to scan in the modqueue. Default is 0. Set to 0 to scan as many
+  items as possible items.
 
 ## Known Issues
 
@@ -54,9 +55,14 @@ will only remove items that match **ALL** selected criteria. You can filter by:
 
 ## Feedback
 
-If you have any feedback or suggestions for Modqueue Nuke, please contact my author, u/Lil_SpazJoekp, on Reddit.
+If you have any feedback or suggestions for Modqueue Nuke, file a bug report or feature request on
+the [GitHub page](https://github.com/LilSpazJoekp/Modqueue-Nuke).
 
 ## Changes
+
+### 1.3.1
+
+- Update devvit version for vulnerability fix.
 
 ### 1.3.0
 

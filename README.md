@@ -60,6 +60,10 @@ the [GitHub page](https://github.com/LilSpazJoekp/Modqueue-Nuke).
 
 ## Changes
 
+### 1.3.2
+
+- Add option to remove modqueued comments on posts when the post is removed or locked (configured in settings)
+
 ### 1.3.1
 
 - Update devvit version for vulnerability fix.

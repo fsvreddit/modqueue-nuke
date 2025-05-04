@@ -899,13 +899,64 @@ Devvit.addTrigger({
     },
 });
 
-async function handleNukeOnRemoveOrLock(target: string, type: "lock" | "remove", context: TriggerContext) {
+Devvit.addSchedulerJob({
+    name: "nukeModQueue",
+    onRun: async (event, context) => {
+        const redisKey = event.data?.redisKey as string | undefined;
+        if (!redisKey) {
+            console.log("No redis key found - not removing comments");
+            return;
+        }
+
+        const currentAttempt = event.data?.attempt as number || 1;
+        const commentsToRemove = await context.redis.zRange(redisKey, 0, -1);
+        if (commentsToRemove.length === 0) {
+            console.log(`No comments to remove in the nuke queue on run ${currentAttempt}`);
+            await context.redis.del(redisKey);
+            return;
+        }
+
+        const retryCount = await context.settings.get<number>("retryLimit") || 3;
+
+        if (currentAttempt < retryCount) {
+            // Schedule the next attempt for one minute in the future in case this one fails.
+            await context.scheduler.runJob({
+                name: "nukeModQueue",
+                runAt: new Date(Date.now() + 60_000),
+                data: { 
+                    redisKey,
+                    attempt: currentAttempt + 1 
+                },
+            });
+        }
+
+        const results = await Promise.all(commentsToRemove.map(async comment => {
+            try {
+                await context.reddit.remove(comment.member, false);
+                await context.redis.zRem(redisKey, [comment.member]);
+                return true;
+            } catch (e) {
+                console.error(`Failed to remove comment ${comment.member} - ${e}`);
+                return false;
+            }
+        }));
+
+        console.log(`Removed ${results.filter(result => result).length} comments from the modqueue`);
+
+        if (results.every(result => result)) {
+            console.log(`All comments removed from the modqueue - deleting redis key ${redisKey}`);
+            await context.redis.del(redisKey);
+        }
+    }
+})
+
+async function handleNukeOnRemoveOrLock (target: string, type: "lock" | "remove", context: TriggerContext) {
     // A post may be locked and removed in quick succession (e.g. via Toolbox). Use Redis to ensure that we only do it once.
     const redisKey = `nukeLock:${target}`
     if (await context.redis.exists(redisKey)) {
         return;
     }
-    await context.redis.set(redisKey, "true", { expiration: new Date(new Date().getTime() + 10_000) });
+    await context.redis.set(redisKey, "true", { expiration: new Date(Date.now() + 10_000) });
 
     const subredditName = context.subredditName ?? await context.reddit.getCurrentSubredditName();
 
@@ -939,8 +990,19 @@ async function handleNukeOnRemoveOrLock(target: string, type: "lock" | "remove",
         return;
     }
 
-    await Promise.all(queuedCommentsForThisPost.map(comment => comment.remove(false)));
-    console.log(`Removed ${queuedCommentsForThisPost.length} comments from the modqueue for post ${target}`);
+    const queueRedisKey = `nukeQueue:${target}`;
+
+    await context.redis.zAdd(queueRedisKey, ...queuedCommentsForThisPost.map(comment => ({ member: comment.id, score: 0 })));
+    await context.scheduler.runJob({
+        name: "nukeModQueue",
+        runAt: new Date(Date.now() + 1000),
+        data: { 
+            redisKey: queueRedisKey,
+            attempt: 1 
+        },
+    });
+
+    console.log(`Queued ${queuedCommentsForThisPost.length} comments for removal from the modqueue for post ${target}`);
 }
 
 // noinspection JSUnusedGlobalSymbols
